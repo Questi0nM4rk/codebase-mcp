@@ -1,0 +1,39 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "codebase-rag"
+version = "0.1.0"
+description = "MCP server for codebase indexing with Merkle tree, Tree-sitter, and Qdrant hybrid search"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "mcp>=1.0.0",
+    "qdrant-client>=1.12.0",
+    "tree-sitter>=0.23.0",
+    "tree-sitter-python>=0.23.0",
+    "tree-sitter-javascript>=0.23.0",
+    "tree-sitter-typescript>=0.23.0",
+    "tree-sitter-c>=0.23.0",
+    "tree-sitter-cpp>=0.23.0",
+    "tree-sitter-rust>=0.23.0",
+    "tree-sitter-go>=0.23.0",
+    "tree-sitter-c-sharp>=0.23.0",
+    "tree-sitter-lua>=0.1.0",
+    "tree-sitter-bash>=0.22.0",
+    "openai>=1.0.0",
+    "pydantic>=2.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.24.0",
+]
+
+[project.scripts]
+codebase-rag = "codebase_rag:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/codebase_rag"]
