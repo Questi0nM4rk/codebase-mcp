@@ -11,7 +11,6 @@ import asyncio
 import hashlib
 import json
 import os
-from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
 
@@ -26,7 +25,6 @@ from qdrant_client.models import (
     Filter,
     MatchValue,
     PointStruct,
-    SparseVector,
     VectorParams,
 )
 
@@ -109,20 +107,20 @@ class Manifest(BaseModel):
     version: str = "1.0"
     root_hash: str = ""
     updated: str = ""
-    stats: dict = {}
-    tree: dict = {}
+    stats: dict[str, Any] = {}
+    tree: dict[str, Any] = {}
 
 
 class CodebaseRAG:
     """Codebase indexing and search with Merkle tree and Qdrant."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.qdrant: Optional[QdrantClient] = None
         self.openai: Optional[OpenAI] = None
         self.parsers: dict[str, Parser] = {}
         self._initialized = False
 
-    async def initialize(self):
+    async def initialize(self) -> None:
         """Initialize Qdrant client and Tree-sitter parsers."""
         if self._initialized:
             return
@@ -184,7 +182,7 @@ class CodebaseRAG:
                 return Manifest(**data)
         return Manifest()
 
-    def save_manifest(self, project_path: Path, manifest: Manifest):
+    def save_manifest(self, project_path: Path, manifest: Manifest) -> None:
         """Save manifest to disk."""
         manifest_path = project_path / ".codeagent" / "index" / "manifest.json"
         manifest_path.parent.mkdir(parents=True, exist_ok=True)
@@ -236,14 +234,14 @@ class CodebaseRAG:
         )
 
     def _extract_chunks(
-        self, file_path: Path, content: str, root_node, language: str
+        self, file_path: Path, content: str, root_node: Any, language: str
     ) -> list[Chunk]:
         """Extract semantic chunks from AST."""
-        chunks = []
+        chunks: list[Chunk] = []
         lines = content.split("\n")
 
         # Node types to extract by language
-        chunk_types = {
+        chunk_types: dict[str, list[str]] = {
             "python": ["function_definition", "class_definition", "async_function_definition"],
             "javascript": ["function_declaration", "class_declaration", "arrow_function", "method_definition"],
             "typescript": ["function_declaration", "class_declaration", "interface_declaration", "method_definition"],
@@ -258,7 +256,7 @@ class CodebaseRAG:
 
         target_types = chunk_types.get(language, [])
 
-        def visit(node, parent_name=None):
+        def visit(node: Any, parent_name: Optional[str] = None) -> None:
             if node.type in target_types:
                 # Extract name
                 name = self._extract_node_name(node, language)
@@ -298,7 +296,7 @@ class CodebaseRAG:
 
         return chunks
 
-    def _extract_node_name(self, node, language: str) -> str:
+    def _extract_node_name(self, node: Any, language: str) -> str:
         """Extract name from AST node."""
         # Look for identifier or name child
         for child in node.children:
@@ -314,7 +312,7 @@ class CodebaseRAG:
         file_pattern: Optional[str] = None,
         chunk_type: Optional[str] = None,
         project: Optional[str] = None,
-    ) -> list[dict]:
+    ) -> list[dict[str, Any]]:
         """Hybrid search over indexed codebase."""
         if not self.qdrant:
             return [{"error": "Qdrant not available. Run 'codeagent start' first."}]
@@ -360,7 +358,7 @@ class CodebaseRAG:
         except Exception as e:
             return [{"error": str(e)}]
 
-    async def index_file(self, file_path: str, project: Optional[str] = None) -> dict:
+    async def index_file(self, file_path: str, project: Optional[str] = None) -> dict[str, Any]:
         """Index a single file."""
         await self.initialize()
 
@@ -414,7 +412,7 @@ class CodebaseRAG:
             "chunk_ids": [c.id for c in chunks],
         }
 
-    async def get_status(self) -> dict:
+    async def get_status(self) -> dict[str, Any]:
         """Get index status."""
         await self.initialize()
 
@@ -509,7 +507,7 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
     return [TextContent(type="text", text=f"Unknown tool: {name}")]
 
 
-def main():
+def main() -> None:
     """Run the MCP server."""
     asyncio.run(stdio_server(server))
 
