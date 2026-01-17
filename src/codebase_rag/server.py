@@ -341,7 +341,7 @@ class CodebaseRAG:
                 chunk_content = "\n".join(lines[start_line - 1 : end_line])
 
                 chunk = Chunk(
-                    id=f"{language}_{_compute_file_hash((str(file_path) + name).encode())}_{start_line}",
+                    id=f"{language}_{_compute_file_hash(f'{file_path}-{name}'.encode())}_{start_line}",
                     file=str(file_path),
                     language=language,
                     type=node.type,
