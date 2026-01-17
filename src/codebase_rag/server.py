@@ -392,7 +392,7 @@ class CodebaseRAG:
                 ORDER BY distance ASC
                 LIMIT ?
             """
-            params_with_embedding = [query_embedding, *params, k]
+            params_with_embedding = (query_embedding, *params, k)
 
             try:
                 cursor = conn.execute(sql, params_with_embedding)
@@ -460,7 +460,7 @@ class CodebaseRAG:
             """
             params.append(k)
 
-            cursor = conn.execute(sql, params)
+            cursor = conn.execute(sql, tuple(params))
             rows = cursor.fetchall()
             columns = [
                 "chunk_id",
@@ -501,7 +501,7 @@ class CodebaseRAG:
 
         try:
             # Delete existing chunks for this file
-            conn.execute("DELETE FROM code_chunks WHERE file_path = ?", [str(path)])
+            conn.execute("DELETE FROM code_chunks WHERE file_path = ?", (str(path),))
 
             # Index new chunks
             chunk_ids = []
@@ -516,7 +516,7 @@ class CodebaseRAG:
                         dependencies, parent_name, embedding
                     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                    [
+                    (
                         chunk.id,
                         chunk.file,
                         idx,
@@ -531,7 +531,7 @@ class CodebaseRAG:
                         json.dumps(chunk.dependencies),
                         chunk.parent,
                         embedding,
-                    ],
+                    ),
                 )
                 chunk_ids.append(chunk.id)
 
@@ -553,7 +553,7 @@ class CodebaseRAG:
 
         conn = _get_db()
         cursor = conn.execute(
-            "DELETE FROM code_chunks WHERE file_path = ?", [file_path]
+            "DELETE FROM code_chunks WHERE file_path = ?", (file_path,)
         )
         conn.commit()
 
@@ -597,7 +597,7 @@ class CodebaseRAG:
             return {"error": "libsql-experimental not available"}
 
         conn = _get_db()
-        cursor = conn.execute("DELETE FROM code_chunks WHERE project = ?", [project])
+        cursor = conn.execute("DELETE FROM code_chunks WHERE project = ?", (project,))
         conn.commit()
 
         return {"project": project, "chunks_deleted": cursor.rowcount}
