@@ -59,6 +59,25 @@ DB_PATH = os.path.expanduser("~/.codeagent/codeagent.db")
 EMBEDDING_MODEL = "text-embedding-3-small"
 EMBEDDING_DIM = 1536
 
+# Extension to language name mapping (always available)
+EXTENSION_TO_LANG = {
+    ".py": "python",
+    ".js": "javascript",
+    ".jsx": "javascript",
+    ".ts": "typescript",
+    ".tsx": "typescript",
+    ".c": "c",
+    ".h": "c",
+    ".cpp": "cpp",
+    ".hpp": "cpp",
+    ".rs": "rust",
+    ".go": "go",
+    ".cs": "csharp",
+    ".lua": "lua",
+    ".sh": "bash",
+    ".bash": "bash",
+}
+
 # Language to Tree-sitter grammar mapping
 LANGUAGE_MAP = {}
 if TREE_SITTER_AVAILABLE:
@@ -224,13 +243,17 @@ class CodebaseRAG:
             print(f"Parse error for {file_path}: {e}")
             return [self._create_raw_chunk(file_path, content)]
 
-    def _create_raw_chunk(self, file_path: Path, content: str) -> Chunk:
+    def _create_raw_chunk(
+        self, file_path: Path, content: str, language: Optional[str] = None
+    ) -> Chunk:
         """Create a raw chunk for unparseable files."""
         lines = content.split("\n")
+        # Use provided language, or detect from extension, or fallback to "unknown"
+        lang = language or EXTENSION_TO_LANG.get(file_path.suffix.lower(), "unknown")
         return Chunk(
             id=f"raw_{_compute_file_hash(content.encode())}",
             file=str(file_path),
-            language="unknown",
+            language=lang,
             type="raw",
             name=file_path.name,
             start_line=1,
@@ -313,9 +336,9 @@ class CodebaseRAG:
 
         visit(root_node)
 
-        # If no chunks found, create raw chunk
+        # If no chunks found, create raw chunk with known language
         if not chunks:
-            return [self._create_raw_chunk(file_path, content)]
+            return [self._create_raw_chunk(file_path, content, language)]
 
         return chunks
 
@@ -574,12 +597,14 @@ class CodebaseRAG:
             try:
                 conn = _get_db()
                 cursor = conn.execute("SELECT COUNT(*) FROM code_chunks")
-                status["indexed_chunks"] = cursor.fetchone()[0]
+                row = cursor.fetchone()
+                status["indexed_chunks"] = row[0] if row else 0
 
                 cursor = conn.execute(
                     "SELECT COUNT(*) FROM code_chunks WHERE embedding IS NOT NULL"
                 )
-                status["chunks_with_embeddings"] = cursor.fetchone()[0]
+                row = cursor.fetchone()
+                status["chunks_with_embeddings"] = row[0] if row else 0
 
                 cursor = conn.execute("SELECT DISTINCT project FROM code_chunks")
                 status["projects"] = [row[0] for row in cursor.fetchall() if row[0]]
