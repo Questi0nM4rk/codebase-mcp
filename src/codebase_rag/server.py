@@ -12,6 +12,7 @@ import json
 import logging
 import os
 import struct
+import threading
 from pathlib import Path
 from typing import Any, Optional
 
@@ -122,18 +123,22 @@ class Chunk(BaseModel):
 
 # Database helpers
 _db_conn = None
+_db_lock = threading.Lock()
 _openai_client = None
 
 
 def _get_db():
-    """Get or create database connection."""
+    """Get or create database connection (thread-safe)."""
     global _db_conn
     if _db_conn is None:
-        if not LIBSQL_AVAILABLE:
-            raise RuntimeError("libsql-experimental not installed")
-        os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
-        _db_conn = libsql.connect(DB_PATH)
-        _init_schema(_db_conn)
+        with _db_lock:
+            # Double-check locking pattern
+            if _db_conn is None:
+                if not LIBSQL_AVAILABLE:
+                    raise RuntimeError("libsql-experimental not installed")
+                os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
+                _db_conn = libsql.connect(DB_PATH)
+                _init_schema(_db_conn)
     return _db_conn
 
 
@@ -559,7 +564,7 @@ class CodebaseRAG:
                         chunk.start_line,
                         chunk.end_line,
                         file_hash,
-                        project or "",
+                        project if project else None,  # Store NULL for no project
                         json.dumps(chunk.dependencies),
                         chunk.parent,
                         embedding,

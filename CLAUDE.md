@@ -11,8 +11,11 @@ src/codebase_rag/
 tests/
   test_server.py  # Unit tests
 ~/.codeagent/
-  codeagent.db  # libSQL database (auto-created)
+  codeagent.db  # Shared libSQL database (part of codeagent ecosystem)
 ```
+
+Note: This MCP shares a database with other codeagent MCPs (reflection, amem, backlog).
+The "codeagent" naming is intentional for ecosystem consistency.
 
 ## Commands
 
