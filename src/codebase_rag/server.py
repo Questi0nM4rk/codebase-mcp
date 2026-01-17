@@ -150,7 +150,7 @@ def _get_db():
     if _db_conn is None:
         with _db_lock:
             # Double-check locking for thread-safe initialization
-            if _db_conn is None:
+            if _db_conn is None and libsql is not None:
                 if not LIBSQL_AVAILABLE:
                     raise RuntimeError("libsql-experimental not installed")
                 os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
@@ -344,8 +344,10 @@ class CodebaseRAG:
                 # Extract content
                 chunk_content = "\n".join(lines[start_line - 1 : end_line])
 
+                # Use null byte separator for unambiguous hash input
+                hash_input = f"{file_path}\x00{name}"
                 chunk = Chunk(
-                    id=f"{language}_{_compute_file_hash(f'{file_path}-{name}'.encode())}_{start_line}",
+                    id=f"{language}_{_compute_file_hash(hash_input.encode())}_{start_line}",
                     file=str(file_path),
                     language=language,
                     type=node.type,
@@ -695,7 +697,7 @@ async def list_tools() -> list[Tool]:
                     },
                     "type": {
                         "type": "string",
-                        "description": "Filter by chunk type (function, class, method)",
+                        "description": "Filter by chunk type (Tree-sitter node names: function_definition, class_definition, method_definition, etc.)",
                     },
                     "project": {
                         "type": "string",
