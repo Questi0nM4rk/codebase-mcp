@@ -440,12 +440,6 @@ class CodebaseRAG:
             keywords = query.lower().split()
             if keywords:
                 keyword_conditions = []
-
-                def escape_like(s: str) -> str:
-                    return (
-                        s.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-                    )
-
                 for kw in keywords[:5]:  # Limit to 5 keywords
                     keyword_conditions.append(
                         "(LOWER(content) LIKE ? ESCAPE '\\' OR LOWER(name) LIKE ? ESCAPE '\\')"
@@ -486,7 +480,9 @@ class CodebaseRAG:
 
         return results
 
-    async def index_file(self, file_path: str, project: Optional[str] = None) -> dict[str, Any]:
+    async def index_file(
+        self, file_path: str, project: Optional[str] = None
+    ) -> dict[str, Any]:
         """Index a single file."""
         await self.initialize()
 
