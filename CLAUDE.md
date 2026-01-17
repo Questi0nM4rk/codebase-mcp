@@ -38,3 +38,16 @@ uv sync --all-extras
 - `delete_file` - Remove a file from the index
 - `clear_project` - Remove all indexed chunks for a project
 - `status` - Get libSQL health and chunk count
+
+## PR Workflow
+
+This repo uses **CodeRabbit** for automated code review.
+
+### After Addressing Review Comments
+
+1. Push your code fixes
+2. **Resolve each GitHub comment** on the PR (click "Resolve conversation")
+3. CodeRabbit will auto-approve once all comments are resolved and checks pass
+
+**Important**: Just pushing fixes is not enough. You must explicitly resolve
+the GitHub PR comments for CodeRabbit to approve.
