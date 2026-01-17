@@ -19,7 +19,7 @@ from typing import Any, Optional
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
 from mcp.types import TextContent, Tool
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -117,7 +117,7 @@ class Chunk(BaseModel):
     start_line: int
     end_line: int
     content: str
-    dependencies: list[str] = []
+    dependencies: list[str] = Field(default_factory=list)
     parent: Optional[str] = None
 
 
@@ -128,11 +128,20 @@ _openai_client = None
 
 
 def _get_db():
-    """Get or create database connection (thread-safe)."""
+    """Get or create database connection.
+
+    Thread-safety note: This uses a singleton connection pattern suitable for
+    single-threaded MCP stdio servers. The connection is initialized with
+    double-check locking, and all database operations are synchronous (no await
+    points), preventing coroutine interleaving on the same connection.
+
+    For multi-threaded usage, consider using per-thread connections or a
+    connection pool instead.
+    """
     global _db_conn
     if _db_conn is None:
         with _db_lock:
-            # Double-check locking pattern
+            # Double-check locking for thread-safe initialization
             if _db_conn is None:
                 if not LIBSQL_AVAILABLE:
                     raise RuntimeError("libsql-experimental not installed")
@@ -261,8 +270,10 @@ class CodebaseRAG:
         lines = content.split("\n")
         # Use provided language, or detect from extension, or fallback to "unknown"
         lang = language or EXTENSION_TO_LANG.get(file_path.suffix.lower(), "unknown")
+        # Include file_path in hash to prevent collisions for identical content (e.g., empty files)
+        raw_id = _compute_file_hash((str(file_path) + "\n" + content).encode())
         return Chunk(
-            id=f"raw_{_compute_file_hash(content.encode())}",
+            id=f"raw_{raw_id}",
             file=str(file_path),
             language=lang,
             type="raw",
