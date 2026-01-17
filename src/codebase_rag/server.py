@@ -9,6 +9,7 @@ Provides tools for:
 import asyncio
 import hashlib
 import json
+import logging
 import os
 import struct
 from pathlib import Path
@@ -18,6 +19,9 @@ from mcp.server import Server
 from mcp.server.stdio import stdio_server
 from mcp.types import TextContent, Tool
 from pydantic import BaseModel
+
+# Configure logging
+logger = logging.getLogger(__name__)
 
 # Tree-sitter imports
 try:
@@ -189,8 +193,8 @@ def _get_embedding(text: str) -> Optional[bytes]:
         )
         embedding = response.data[0].embedding
         return struct.pack(f"<{EMBEDDING_DIM}f", *embedding)
-    except Exception as e:
-        print(f"Embedding error: {e}")
+    except Exception:
+        logger.warning("Failed to generate embedding", exc_info=True)
         return None
 
 
@@ -220,8 +224,10 @@ class CodebaseRAG:
                         language = Language(grammar_module.language())
                         parser.language = language
                         self.parsers[lang_name] = parser
-                    except Exception as e:
-                        print(f"Failed to load parser for {lang_name}: {e}")
+                    except Exception:
+                        logger.debug(
+                            "Failed to load parser for %s", lang_name, exc_info=True
+                        )
 
         self._initialized = True
 
@@ -239,8 +245,8 @@ class CodebaseRAG:
         try:
             tree = parser.parse(content.encode())
             return self._extract_chunks(file_path, content, tree.root_node, lang_name)
-        except Exception as e:
-            print(f"Parse error for {file_path}: {e}")
+        except Exception:
+            logger.debug("Parse error for %s", file_path, exc_info=True)
             return [self._create_raw_chunk(file_path, content)]
 
     def _create_raw_chunk(
@@ -437,9 +443,12 @@ class CodebaseRAG:
                     result["score"] = 1.0 - (result.pop("distance") or 0.0)
                     result["content"] = (result.get("content") or "")[:500]
                     results.append(result)
-            except Exception as e:
+            except Exception:
                 # Fall back to keyword search
-                print(f"Vector search failed: {e}")
+                logger.debug(
+                    "Vector search failed, falling back to keyword search",
+                    exc_info=True,
+                )
 
         # Keyword search fallback or supplement
         if not results:
@@ -611,8 +620,9 @@ class CodebaseRAG:
 
                 cursor = conn.execute("SELECT DISTINCT language FROM code_chunks")
                 status["languages"] = [row[0] for row in cursor.fetchall() if row[0]]
-            except Exception as e:
-                status["db_error"] = str(e)
+            except Exception:
+                logger.warning("Failed to query database status", exc_info=True)
+                status["db_error"] = "Failed to query database"
 
         return status
 

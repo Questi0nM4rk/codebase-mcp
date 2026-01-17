@@ -1,5 +1,6 @@
 """Tests for codebase_rag.server module."""
 
+import sys
 from pathlib import Path
 
 import pytest
@@ -7,8 +8,12 @@ import pytest
 from codebase_rag.server import (
     Chunk,
     CodebaseRAG,
+    LIBSQL_AVAILABLE,
     _compute_file_hash,
 )
+
+# libsql-experimental has segfault issues on Python 3.14+
+SKIP_LIBSQL_TESTS = sys.version_info >= (3, 14) or not LIBSQL_AVAILABLE
 
 
 class TestChunk:
@@ -115,8 +120,11 @@ class TestCodebaseRAG:
 
 
 @pytest.mark.asyncio
+@pytest.mark.skipif(
+    SKIP_LIBSQL_TESTS, reason="libsql unavailable or unstable on Python 3.14+"
+)
 class TestCodebaseRAGAsync:
-    """Async tests for CodebaseRAG class."""
+    """Async tests for CodebaseRAG class (requires libsql)."""
 
     async def test_get_status(self) -> None:
         """get_status should return status dict."""
