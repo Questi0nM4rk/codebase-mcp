@@ -40,6 +40,8 @@ try:
 
     TREE_SITTER_AVAILABLE = True
 except ImportError:
+    Language = None  # type: ignore[misc,assignment]
+    Parser = None  # type: ignore[misc,assignment]
     TREE_SITTER_AVAILABLE = False
 
 # OpenAI for embeddings
@@ -48,6 +50,7 @@ try:
 
     OPENAI_AVAILABLE = True
 except ImportError:
+    OpenAI = None  # type: ignore[misc,assignment]
     OPENAI_AVAILABLE = False
 
 # libSQL
@@ -56,6 +59,7 @@ try:
 
     LIBSQL_AVAILABLE = True
 except ImportError:
+    libsql = None  # type: ignore[assignment]
     LIBSQL_AVAILABLE = False
 
 
