@@ -99,20 +99,30 @@ class TestCodebaseRAG:
         assert chunks[0].type == "raw"
         assert chunks[0].language == "unknown"
 
-    def test_parse_python_file_returns_chunks(self) -> None:
-        """parse_file should return chunks for Python files."""
+
+@pytest.mark.asyncio
+class TestCodebaseRAGParsing:
+    """Tests for CodebaseRAG parsing (requires initialize() for Tree-sitter)."""
+
+    async def test_parse_python_file_returns_function_chunks(self) -> None:
+        """parse_file should return function chunks for Python files."""
         rag = CodebaseRAG()
+        await rag.initialize()
         content = "def hello():\n    pass\n"
 
         chunks = rag.parse_file(Path("/tmp/test.py"), content)
 
-        # Should return at least one chunk (may be raw if tree-sitter unavailable)
         assert len(chunks) >= 1
         assert chunks[0].language == "python"
+        # With parsers initialized, should get function_definition not raw
+        if rag.parsers:  # Tree-sitter available
+            assert chunks[0].type == "function_definition"
+            assert chunks[0].name == "hello"
 
-    def test_parse_empty_file(self) -> None:
+    async def test_parse_empty_file(self) -> None:
         """parse_file should handle empty files."""
         rag = CodebaseRAG()
+        await rag.initialize()
 
         chunks = rag.parse_file(Path("/tmp/test.py"), "")
 
