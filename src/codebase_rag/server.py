@@ -130,13 +130,17 @@ _openai_client = None
 def _get_db():
     """Get or create database connection.
 
-    Thread-safety note: This uses a singleton connection pattern suitable for
-    single-threaded MCP stdio servers. The connection is initialized with
-    double-check locking, and all database operations are synchronous (no await
-    points), preventing coroutine interleaving on the same connection.
+    Thread-safety note: This uses a singleton connection pattern. MCP stdio
+    servers process requests sequentially via asyncio.run(stdio_server(...)),
+    which runs a single-threaded event loop. Tool calls are awaited one at a
+    time, so concurrent DB access does not occur within the MCP protocol flow.
 
-    For multi-threaded usage, consider using per-thread connections or a
-    connection pool instead.
+    The double-check locking protects initialization. DB operations (execute,
+    commit) are synchronous and complete atomically without yielding, so no
+    coroutine interleaving occurs on the connection.
+
+    For multi-threaded or multi-process usage outside MCP stdio context,
+    use per-thread connections or a connection pool instead.
     """
     global _db_conn
     if _db_conn is None:
@@ -397,8 +401,8 @@ class CodebaseRAG:
 
         conn = _get_db()
 
-        # Get query embedding for vector search
-        query_embedding = _get_embedding(query)
+        # Get query embedding for vector search (offload to thread to avoid blocking)
+        query_embedding = await asyncio.to_thread(_get_embedding, query)
 
         results = []
 
@@ -541,8 +545,10 @@ class CodebaseRAG:
         if not path.exists():
             return {"error": f"File not found: {file_path}"}
 
-        content = path.read_text(errors="ignore")
-        file_hash = _compute_file_hash(content.encode())
+        # Read raw bytes first for stable hash, then decode for content
+        raw_bytes = path.read_bytes()
+        content = raw_bytes.decode(errors="ignore")
+        file_hash = _compute_file_hash(raw_bytes)
         chunks = self.parse_file(path, content)
 
         conn = _get_db()
@@ -554,7 +560,8 @@ class CodebaseRAG:
             # Index new chunks
             chunk_ids = []
             for idx, chunk in enumerate(chunks):
-                embedding = _get_embedding(chunk.content)
+                # Offload embedding to thread to avoid blocking event loop
+                embedding = await asyncio.to_thread(_get_embedding, chunk.content)
 
                 conn.execute(
                     """
