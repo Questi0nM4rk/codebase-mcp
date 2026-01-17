@@ -6,6 +6,8 @@ Provides tools for:
 - libSQL hybrid search (keyword + vector)
 """
 
+from __future__ import annotations
+
 import asyncio
 import hashlib
 import json
@@ -14,7 +16,7 @@ import os
 import struct
 import threading
 from pathlib import Path
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any
 
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
@@ -23,6 +25,11 @@ from pydantic import BaseModel, Field
 
 # Configure logging
 logger = logging.getLogger(__name__)
+
+# Type-only imports for annotations
+if TYPE_CHECKING:
+    from openai import OpenAI as OpenAIClient
+    from tree_sitter import Parser as TreeSitterParser
 
 # Tree-sitter imports
 try:
@@ -40,6 +47,17 @@ try:
 
     TREE_SITTER_AVAILABLE = True
 except ImportError:
+    # Define stubs for type checker when tree-sitter unavailable
+    tree_sitter_bash = None  # type: ignore[assignment]
+    tree_sitter_c = None  # type: ignore[assignment]
+    tree_sitter_c_sharp = None  # type: ignore[assignment]
+    tree_sitter_cpp = None  # type: ignore[assignment]
+    tree_sitter_go = None  # type: ignore[assignment]
+    tree_sitter_javascript = None  # type: ignore[assignment]
+    tree_sitter_lua = None  # type: ignore[assignment]
+    tree_sitter_python = None  # type: ignore[assignment]
+    tree_sitter_rust = None  # type: ignore[assignment]
+    tree_sitter_typescript = None  # type: ignore[assignment]
     Language = None  # type: ignore[misc,assignment]
     Parser = None  # type: ignore[misc,assignment]
     TREE_SITTER_AVAILABLE = False
@@ -117,12 +135,12 @@ class Chunk(BaseModel):
     language: str
     type: str  # function, class, method, etc.
     name: str
-    signature: Optional[str] = None
+    signature: str | None = None
     start_line: int
     end_line: int
     content: str
     dependencies: list[str] = Field(default_factory=list)
-    parent: Optional[str] = None
+    parent: str | None = None
 
 
 # Database helpers
@@ -154,7 +172,7 @@ def _get_db():
                 if not LIBSQL_AVAILABLE:
                     raise RuntimeError("libsql-experimental not installed")
                 os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
-                _db_conn = libsql.connect(DB_PATH)
+                _db_conn = libsql.connect(DB_PATH)  # type: ignore[union-attr]
                 _init_schema(_db_conn)
     return _db_conn
 
@@ -192,17 +210,17 @@ def _init_schema(conn):
     conn.commit()
 
 
-def _get_openai_client() -> Optional[OpenAI]:
+def _get_openai_client() -> OpenAIClient | None:
     """Get or create OpenAI client."""
     global _openai_client
-    if _openai_client is None and OPENAI_AVAILABLE:
+    if _openai_client is None and OPENAI_AVAILABLE and OpenAI is not None:
         api_key = os.getenv("OPENAI_API_KEY")
         if api_key:
             _openai_client = OpenAI(api_key=api_key)
     return _openai_client
 
 
-def _get_embedding(text: str) -> Optional[bytes]:
+def _get_embedding(text: str) -> bytes | None:
     """Get embedding vector for text as packed bytes."""
     client = _get_openai_client()
     if not client:
@@ -228,18 +246,18 @@ def _compute_file_hash(content: bytes) -> str:
 class CodebaseRAG:
     """Codebase indexing and search with Tree-sitter and libSQL."""
 
-    def __init__(self):
-        self.parsers: dict[str, Parser] = {}
+    def __init__(self) -> None:
+        self.parsers: dict[str, TreeSitterParser] = {}
         self._initialized = False
 
-    async def initialize(self):
+    async def initialize(self) -> None:
         """Initialize Tree-sitter parsers."""
         if self._initialized:
             return
 
         # Initialize Tree-sitter parsers
-        if TREE_SITTER_AVAILABLE:
-            for ext, (lang_name, grammar_module) in LANGUAGE_MAP.items():
+        if TREE_SITTER_AVAILABLE and Parser is not None and Language is not None:
+            for _, (lang_name, grammar_module) in LANGUAGE_MAP.items():
                 if grammar_module and lang_name not in self.parsers:
                     try:
                         parser = Parser()
@@ -272,7 +290,7 @@ class CodebaseRAG:
             return [self._create_raw_chunk(file_path, content)]
 
     def _create_raw_chunk(
-        self, file_path: Path, content: str, language: Optional[str] = None
+        self, file_path: Path, content: str, language: str | None = None
     ) -> Chunk:
         """Create a raw chunk for unparseable files."""
         lines = content.split("\n")
@@ -332,7 +350,7 @@ class CodebaseRAG:
 
         target_types = chunk_types.get(language, [])
 
-        def visit(node: Any, parent_name: Optional[str] = None) -> None:
+        def visit(node: Any, parent_name: str | None = None) -> None:
             if node.type in target_types:
                 # Extract name
                 name = self._extract_node_name(node, language)
@@ -395,9 +413,9 @@ class CodebaseRAG:
         self,
         query: str,
         k: int = 10,
-        language: Optional[str] = None,
-        chunk_type: Optional[str] = None,
-        project: Optional[str] = None,
+        language: str | None = None,
+        chunk_type: str | None = None,
+        project: str | None = None,
     ) -> list[dict[str, Any]]:
         """Hybrid search over indexed codebase."""
         await self.initialize()
@@ -406,6 +424,8 @@ class CodebaseRAG:
             return [{"error": "libsql-experimental not available"}]
 
         conn = _get_db()
+        if conn is None:
+            return [{"error": "Database connection unavailable"}]
 
         # Get query embedding for vector search (offload to thread to avoid blocking)
         query_embedding = await asyncio.to_thread(_get_embedding, query)
@@ -539,7 +559,7 @@ class CodebaseRAG:
         return results
 
     async def index_file(
-        self, file_path: str, project: Optional[str] = None
+        self, file_path: str, project: str | None = None
     ) -> dict[str, Any]:
         """Index a single file."""
         await self.initialize()
@@ -558,6 +578,8 @@ class CodebaseRAG:
         chunks = self.parse_file(path, content)
 
         conn = _get_db()
+        if conn is None:
+            return {"error": "Database connection unavailable"}
 
         try:
             # Delete existing chunks for this file
@@ -613,6 +635,9 @@ class CodebaseRAG:
             return {"error": "libsql-experimental not available"}
 
         conn = _get_db()
+        if conn is None:
+            return {"error": "Database connection unavailable"}
+
         cursor = conn.execute(
             "DELETE FROM code_chunks WHERE file_path = ?", (file_path,)
         )
@@ -634,6 +659,9 @@ class CodebaseRAG:
         if LIBSQL_AVAILABLE:
             try:
                 conn = _get_db()
+                if conn is None:
+                    status["db_error"] = "Database connection unavailable"
+                    return status
                 cursor = conn.execute("SELECT COUNT(*) FROM code_chunks")
                 row = cursor.fetchone()
                 status["indexed_chunks"] = row[0] if row else 0
@@ -661,6 +689,9 @@ class CodebaseRAG:
             return {"error": "libsql-experimental not available"}
 
         conn = _get_db()
+        if conn is None:
+            return {"error": "Database connection unavailable"}
+
         cursor = conn.execute("DELETE FROM code_chunks WHERE project = ?", (project,))
         conn.commit()
 
@@ -800,7 +831,7 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
 
 def main() -> None:
     """Run the MCP server."""
-    asyncio.run(stdio_server(server))
+    asyncio.run(stdio_server(server))  # type: ignore[arg-type]
 
 
 if __name__ == "__main__":

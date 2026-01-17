@@ -30,6 +30,7 @@ dependencies = [
 dev = [
     "pytest>=8.0.0",
     "pytest-asyncio>=0.24.0",
+    "pyright>=1.1.0",
 ]
 
 [project.scripts]
@@ -37,3 +38,19 @@ codebase-rag = "codebase_rag:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/codebase_rag"]
+
+[tool.pyright]
+include = ["src"]
+pythonVersion = "3.11"
+typeCheckingMode = "standard"
+# Strict checks for None handling
+reportOptionalMemberAccess = "error"
+reportOptionalCall = "error"
+reportOptionalIterable = "error"
+reportOptionalContextManager = "error"
+reportOptionalOperand = "error"
+reportOptionalSubscript = "error"
+# Catch possibly unbound variables
+reportPossiblyUnboundVariable = "error"
+reportUnusedImport = "error"
+reportUnusedVariable = "warning"
