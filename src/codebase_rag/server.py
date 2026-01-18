@@ -8,6 +8,7 @@ Provides tools for:
 
 from __future__ import annotations
 
+import atexit
 import asyncio
 import hashlib
 import json
@@ -163,6 +164,10 @@ def _get_db():
 
     For multi-threaded or multi-process usage outside MCP stdio context,
     use per-thread connections or a connection pool instead.
+
+    Note: asyncio.to_thread() calls in this codebase only offload non-DB
+    operations (like _get_embedding for OpenAI API calls). All DB operations
+    remain on the main asyncio thread to avoid cross-thread connection access.
     """
     global _db_conn
     if _db_conn is None:
@@ -175,6 +180,22 @@ def _get_db():
                 _db_conn = libsql.connect(DB_PATH)  # type: ignore[union-attr]
                 _init_schema(_db_conn)
     return _db_conn
+
+
+def _close_db() -> None:
+    """Close database connection on process exit."""
+    global _db_conn
+    if _db_conn is not None:
+        try:
+            _db_conn.close()
+            logger.debug("Database connection closed")
+        except Exception:
+            logger.warning("Error closing database connection", exc_info=True)
+        _db_conn = None
+
+
+# Register cleanup handler for graceful shutdown
+atexit.register(_close_db)
 
 
 def _init_schema(conn):
@@ -279,7 +300,7 @@ class CodebaseRAG:
 
         lang_name, _ = LANGUAGE_MAP[ext]
         if lang_name not in self.parsers:
-            return [self._create_raw_chunk(file_path, content)]
+            return [self._create_raw_chunk(file_path, content, lang_name)]
 
         parser = self.parsers[lang_name]
         try:
@@ -287,7 +308,7 @@ class CodebaseRAG:
             return self._extract_chunks(file_path, content, tree.root_node, lang_name)
         except Exception:
             logger.debug("Parse error for %s", file_path, exc_info=True)
-            return [self._create_raw_chunk(file_path, content)]
+            return [self._create_raw_chunk(file_path, content, lang_name)]
 
     def _create_raw_chunk(
         self, file_path: Path, content: str, language: str | None = None
@@ -431,6 +452,7 @@ class CodebaseRAG:
         query_embedding = await asyncio.to_thread(_get_embedding, query)
 
         results = []
+        search_mode = "hybrid"  # Track search mode for user feedback
 
         # Vector search if embeddings available
         if query_embedding:
@@ -491,10 +513,14 @@ class CodebaseRAG:
                     results.append(result)
             except Exception:
                 # Fall back to keyword search
-                logger.debug(
+                logger.warning(
                     "Vector search failed, falling back to keyword search",
                     exc_info=True,
                 )
+                search_mode = "keyword_only (vector search failed)"
+        else:
+            # No embedding available (OpenAI client not configured or API error)
+            search_mode = "keyword_only (embeddings unavailable)"
 
         # Keyword search fallback or supplement
         if not results:
@@ -555,6 +581,10 @@ class CodebaseRAG:
                 result["score"] = 0.5  # Lower score for keyword matches
                 result["content"] = (result.get("content") or "")[:500]
                 results.append(result)
+
+        # Add search mode metadata if not using full hybrid search
+        if search_mode != "hybrid" and results:
+            results.insert(0, {"_search_mode": search_mode, "_warning": True})
 
         return results
 
