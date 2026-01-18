@@ -1,6 +1,6 @@
 """Tests for codebase_rag.server module."""
 
-import tempfile
+import sys
 from pathlib import Path
 
 import pytest
@@ -8,9 +8,12 @@ import pytest
 from codebase_rag.server import (
     Chunk,
     CodebaseRAG,
-    Manifest,
-    ManifestEntry,
+    LIBSQL_AVAILABLE,
+    _compute_file_hash,
 )
+
+# libsql-experimental has segfault issues on Python 3.14+
+SKIP_LIBSQL_TESTS = sys.version_info >= (3, 14) or not LIBSQL_AVAILABLE
 
 
 class TestChunk:
@@ -53,113 +56,37 @@ class TestChunk:
         assert chunk.parent is None
 
 
-class TestManifestEntry:
-    """Tests for ManifestEntry model."""
-
-    def test_manifest_entry_creation(self) -> None:
-        """ManifestEntry should be created with required fields."""
-        entry = ManifestEntry(hash="abc123")
-
-        assert entry.hash == "abc123"
-        assert entry.mtime is None
-        assert entry.chunk_ids == []
-
-
-class TestManifest:
-    """Tests for Manifest model."""
-
-    def test_manifest_default_values(self) -> None:
-        """Manifest should have correct default values."""
-        manifest = Manifest()
-
-        assert manifest.version == "1.0"
-        assert manifest.root_hash == ""
-        assert manifest.updated == ""
-        assert manifest.stats == {}
-        assert manifest.tree == {}
-
-
-class TestCodebaseRAG:
-    """Tests for CodebaseRAG class."""
+class TestComputeFileHash:
+    """Tests for _compute_file_hash function."""
 
     def test_compute_file_hash_returns_16_char_hex(self) -> None:
-        """compute_file_hash should return 16 character hex string."""
-        rag = CodebaseRAG()
+        """_compute_file_hash should return 16 character hex string."""
         content = b"test content"
 
-        hash_result = rag.compute_file_hash(content)
+        hash_result = _compute_file_hash(content)
 
         assert len(hash_result) == 16
         assert all(c in "0123456789abcdef" for c in hash_result)
 
     def test_compute_file_hash_deterministic(self) -> None:
         """Same content should produce same hash."""
-        rag = CodebaseRAG()
         content = b"test content"
 
-        hash1 = rag.compute_file_hash(content)
-        hash2 = rag.compute_file_hash(content)
+        hash1 = _compute_file_hash(content)
+        hash2 = _compute_file_hash(content)
 
         assert hash1 == hash2
 
     def test_compute_file_hash_different_content_different_hash(self) -> None:
         """Different content should produce different hash."""
-        rag = CodebaseRAG()
-
-        hash1 = rag.compute_file_hash(b"content1")
-        hash2 = rag.compute_file_hash(b"content2")
+        hash1 = _compute_file_hash(b"content1")
+        hash2 = _compute_file_hash(b"content2")
 
         assert hash1 != hash2
 
-    def test_compute_dir_hash_returns_16_char_hex(self) -> None:
-        """compute_dir_hash should return 16 character hex string."""
-        rag = CodebaseRAG()
 
-        hash_result = rag.compute_dir_hash(["abc", "def"])
-
-        assert len(hash_result) == 16
-        assert all(c in "0123456789abcdef" for c in hash_result)
-
-    def test_compute_dir_hash_order_independent(self) -> None:
-        """compute_dir_hash should produce same result regardless of input order."""
-        rag = CodebaseRAG()
-
-        hash1 = rag.compute_dir_hash(["abc", "def"])
-        hash2 = rag.compute_dir_hash(["def", "abc"])
-
-        assert hash1 == hash2
-
-    def test_load_manifest_returns_empty_manifest_when_no_file(self) -> None:
-        """load_manifest should return empty Manifest when file doesn't exist."""
-        rag = CodebaseRAG()
-
-        with tempfile.TemporaryDirectory() as tmpdir:
-            manifest = rag.load_manifest(Path(tmpdir))
-
-        assert manifest.version == "1.0"
-        assert manifest.root_hash == ""
-
-    def test_save_and_load_manifest_roundtrip(self) -> None:
-        """Manifest should be saved and loaded correctly."""
-        rag = CodebaseRAG()
-        manifest = Manifest(
-            version="1.0",
-            root_hash="abc123",
-            updated="2026-01-17",
-            stats={"files": 10},
-            tree={"src": {"hash": "xyz"}},
-        )
-
-        with tempfile.TemporaryDirectory() as tmpdir:
-            project_path = Path(tmpdir)
-            rag.save_manifest(project_path, manifest)
-            loaded = rag.load_manifest(project_path)
-
-        assert loaded.version == manifest.version
-        assert loaded.root_hash == manifest.root_hash
-        assert loaded.updated == manifest.updated
-        assert loaded.stats == manifest.stats
-        assert loaded.tree == manifest.tree
+class TestCodebaseRAG:
+    """Tests for CodebaseRAG class."""
 
     def test_create_raw_chunk_for_unknown_file(self) -> None:
         """parse_file should create raw chunk for unknown file types."""
@@ -172,48 +99,76 @@ class TestCodebaseRAG:
         assert chunks[0].type == "raw"
         assert chunks[0].language == "unknown"
 
-    def test_get_embed_returns_zero_vector_without_openai(self) -> None:
-        """get_embed should return zero vector when OpenAI not available."""
+
+@pytest.mark.asyncio
+class TestCodebaseRAGParsing:
+    """Tests for CodebaseRAG parsing (requires initialize() for Tree-sitter)."""
+
+    async def test_parse_python_file_returns_function_chunks(self) -> None:
+        """parse_file should return function chunks for Python files."""
         rag = CodebaseRAG()
-        rag.openai = None
+        await rag.initialize()
+        content = "def hello():\n    pass\n"
 
-        embedding = rag.get_embed("test text")
+        chunks = rag.parse_file(Path("/tmp/test.py"), content)
 
-        assert len(embedding) == 1536  # EMBEDDING_DIM
-        assert all(v == 0.0 for v in embedding)
+        assert len(chunks) >= 1
+        assert chunks[0].language == "python"
+        # With parsers initialized, should get function_definition not raw
+        if rag.parsers:  # Tree-sitter available
+            assert chunks[0].type == "function_definition"
+            assert chunks[0].name == "hello"
+
+    async def test_parse_empty_file(self) -> None:
+        """parse_file should handle empty files."""
+        rag = CodebaseRAG()
+        await rag.initialize()
+
+        chunks = rag.parse_file(Path("/tmp/test.py"), "")
+
+        assert isinstance(chunks, list)
 
 
 @pytest.mark.asyncio
+@pytest.mark.skipif(
+    SKIP_LIBSQL_TESTS, reason="libsql unavailable or unstable on Python 3.14+"
+)
 class TestCodebaseRAGAsync:
-    """Async tests for CodebaseRAG class."""
+    """Async tests for CodebaseRAG class (requires libsql)."""
 
-    async def test_get_status_without_qdrant(self) -> None:
-        """get_status should work without Qdrant connection."""
+    async def test_get_status(self) -> None:
+        """get_status should return status dict."""
         rag = CodebaseRAG()
-        rag._initialized = True
-        rag.qdrant = None
+        await rag.initialize()
 
         status = await rag.get_status()
 
-        assert status["qdrant_available"] is False
-
-    async def test_search_returns_error_without_qdrant(self) -> None:
-        """search should return error when Qdrant not available."""
-        rag = CodebaseRAG()
-        rag._initialized = True
-        rag.qdrant = None
-
-        results = await rag.search("test query")
-
-        assert len(results) == 1
-        assert "error" in results[0]
+        assert isinstance(status, dict)
 
     async def test_index_file_returns_error_for_missing_file(self) -> None:
         """index_file should return error for non-existent file."""
         rag = CodebaseRAG()
-        rag._initialized = True
+        await rag.initialize()
 
         result = await rag.index_file("/nonexistent/file.py")
 
         assert "error" in result
         assert "not found" in result["error"].lower()
+
+    async def test_search_returns_list(self) -> None:
+        """search should return a list of results."""
+        rag = CodebaseRAG()
+        await rag.initialize()
+
+        results = await rag.search("test query")
+
+        assert isinstance(results, list)
+
+    async def test_delete_file_nonexistent(self) -> None:
+        """delete_file should handle non-existent files gracefully."""
+        rag = CodebaseRAG()
+        await rag.initialize()
+
+        result = await rag.delete_file("/nonexistent/file.py")
+
+        assert isinstance(result, dict)
