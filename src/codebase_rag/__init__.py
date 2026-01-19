@@ -1,4 +1,4 @@
-"""Codebase RAG MCP server with Merkle tree, Tree-sitter, and Qdrant hybrid search."""
+"""Codebase RAG MCP server with Tree-sitter parsing and libSQL hybrid search."""
 
 from .server import main
 

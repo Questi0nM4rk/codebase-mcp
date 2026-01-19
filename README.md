@@ -1,14 +1,14 @@
 # codebase-mcp
 
-Codebase RAG MCP for Claude Code - Tree-sitter parsing + Qdrant hybrid search.
+Codebase RAG MCP for Claude Code - Tree-sitter parsing + libSQL hybrid search.
 
 ## Philosophy
 
-Incremental indexing with semantic understanding:
+Semantic code understanding with hybrid search:
 
-- **Merkle tree** - Only re-index changed files
 - **Tree-sitter** - AST-aware chunking (functions, classes, not arbitrary splits)
-- **Hybrid search** - Vector + BM25 + RRF fusion via Qdrant
+- **Hybrid search** - Vector (1536-dim) + keyword matching via libSQL
+- **Shared storage** - Uses `~/.codeagent/codeagent.db` with other CodeAgent MCPs
 
 ## Features
 
@@ -16,7 +16,9 @@ Incremental indexing with semantic understanding:
 |------|-------------|
 | `search` | Hybrid semantic + keyword search |
 | `index_file` | Index or re-index a single file |
-| `status` | Get index status and Qdrant health |
+| `delete_file` | Remove a file from the index |
+| `clear_project` | Clear all chunks for a project |
+| `status` | Get index status and health |
 
 ## Supported Languages
 
@@ -48,8 +50,8 @@ Incremental indexing with semantic understanding:
             |           |
             v           v
     +---------------------------+
-    |         Qdrant            |
-    | (Vector + BM25 Hybrid)    |
+    |         libSQL            |
+    | (Vector + Keyword Hybrid) |
     +---------------------------+
             |
             v
@@ -65,19 +67,18 @@ Incremental indexing with semantic understanding:
 |-----------|---------|
 | **MCP Server** | Exposes tools to Claude Code via stdio |
 | **Tree-sitter** | Parses source code into AST for semantic chunking |
-| **Qdrant** | Vector database for hybrid search |
-| **OpenAI** | Generates embeddings for semantic search |
-| **Merkle Tree** | Tracks file changes for incremental indexing |
+| **libSQL** | SQLite-compatible database with vector search |
+| **OpenAI** | Generates 1536-dim embeddings for semantic search |
 
 ### Data Flow
 
-1. **Indexing**: File -> Tree-sitter AST -> Semantic chunks -> OpenAI embeddings -> Qdrant
-2. **Search**: Query -> OpenAI embedding -> Qdrant hybrid search -> Results
+1. **Indexing**: File -> Tree-sitter AST -> Semantic chunks -> OpenAI embeddings -> libSQL
+2. **Search**: Query -> OpenAI embedding -> libSQL hybrid search -> Results
 
 ## Requirements
 
-- **Qdrant** running at localhost:6333
 - **OpenAI API key** for embeddings
+- **Python 3.10+**
 
 ## Installation
 
@@ -95,18 +96,17 @@ claude mcp add codebase -- python -m codebase_rag.server
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `QDRANT_HOST` | `localhost` | Qdrant server host |
-| `QDRANT_PORT` | `6333` | Qdrant server port |
 | `OPENAI_API_KEY` | - | Required for embeddings |
+| `CODEAGENT_HOME` | `~/.codeagent` | Storage location |
 
-## Starting Qdrant
+## Storage
 
-```bash
-docker run -d --name qdrant \
-  -p 6333:6333 -p 6334:6334 \
-  -v ~/.qdrant/storage:/qdrant/storage \
-  qdrant/qdrant
-```
+Database: `~/.codeagent/codeagent.db` (libSQL with vector search)
+
+Schema:
+- `code_chunks` table with 1536-dimension F32_BLOB embeddings
+- Automatic vector index for similarity search
+- Indexes on project, file_path, and chunk_type
 
 ## Search Example
 
@@ -115,25 +115,10 @@ docker run -d --name qdrant \
 search(query="user authentication login", k=10, language="python")
 
 # Filter by chunk type
-search(query="repository pattern", type="class", language="csharp")
+search(query="repository pattern", chunk_type="class", language="csharp")
 ```
 
 ## Troubleshooting
-
-### Qdrant Connection Failed
-
-```
-Qdrant connection failed: Connection refused
-```
-
-**Solution**: Ensure Qdrant is running:
-```bash
-docker ps | grep qdrant
-# If not running:
-docker start qdrant
-# Or start fresh:
-docker run -d --name qdrant -p 6333:6333 -p 6334:6334 qdrant/qdrant
-```
 
 ### OpenAI API Key Missing
 
@@ -172,12 +157,6 @@ status()
 index_file(path="/path/to/file.py", project="myproject")
 ```
 
-### Memory Issues with Large Files
-
-Files over 2000 characters are truncated in chunks. For very large files:
-- Ensure Tree-sitter is available for proper semantic chunking
-- Consider splitting large files into smaller modules
-
 ## Development
 
 ```bash
@@ -188,10 +167,10 @@ pip install -e ".[dev]"
 pytest tests/ -v
 
 # Lint
-ruff check src/
+ruff check src/ tests/
 
 # Type check
-mypy src/ --ignore-missing-imports --check-untyped-defs
+pyright src/ tests/
 ```
 
 ## License
