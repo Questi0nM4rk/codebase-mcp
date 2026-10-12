@@ -1,198 +1,109 @@
-# codebase-mcp
+<div align="center">
 
-Codebase RAG MCP for Claude Code - Tree-sitter parsing + Qdrant hybrid search.
+# `codebase-mcp`
 
-## Philosophy
+**An MCP server that indexes source files into libSQL and searches them, written for one person's Claude Code setup.**
 
-Incremental indexing with semantic understanding:
+[![CI](https://github.com/Questi0nM4rk/codebase-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/Questi0nM4rk/codebase-mcp/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-- **Merkle tree** - Only re-index changed files
-- **Tree-sitter** - AST-aware chunking (functions, classes, not arbitrary splits)
-- **Hybrid search** - Vector + BM25 + RRF fusion via Qdrant
+</div>
 
-## Features
+Not maintained. For real use, try [semble](https://github.com/MinishLab/semble), [graphify](https://github.com/Graphify-Labs/graphify) or [GitNexus](https://github.com/abhigyanpatwari/GitNexus).
 
-| Tool | Description |
-|------|-------------|
-| `search` | Hybrid semantic + keyword search |
-| `index_file` | Index or re-index a single file |
-| `status` | Get index status and Qdrant health |
-
-## Supported Languages
-
-- Python (`.py`)
-- JavaScript (`.js`, `.jsx`)
-- TypeScript (`.ts`, `.tsx`)
-- C (`.c`, `.h`)
-- C++ (`.cpp`, `.hpp`)
-- Rust (`.rs`)
-- Go (`.go`)
-- C# (`.cs`)
-- Lua (`.lua`)
-- Bash (`.sh`, `.bash`)
-
-## Architecture
-
-```
-                    MCP Server
-                        |
-            +-----------+-----------+
-            |           |           |
-       index_file    search      status
-            |           |           |
-            v           v           v
-    +---------------+   |   +---------------+
-    | Tree-sitter   |   |   | Health Check  |
-    | AST Parser    |   |   +---------------+
-    +---------------+   |
-            |           |
-            v           v
-    +---------------------------+
-    |         Qdrant            |
-    | (Vector + BM25 Hybrid)    |
-    +---------------------------+
-            |
-            v
-    +---------------------------+
-    |    OpenAI Embeddings      |
-    |  (text-embedding-3-small) |
-    +---------------------------+
+```text
+index_file(path="src/codebase_rag/server.py", project="demo")
+  -> {"chunks_created": 24, ...}
+search(query="compute file hash", k=3, project="demo")
+  -> [{"_search_mode": "keyword_only (embeddings unavailable)"}, {"name": "Chunk", "score": 0.5, ...}, ...]
 ```
 
-### Components
+## Why it exists
 
-| Component | Purpose |
-|-----------|---------|
-| **MCP Server** | Exposes tools to Claude Code via stdio |
-| **Tree-sitter** | Parses source code into AST for semantic chunking |
-| **Qdrant** | Vector database for hybrid search |
-| **OpenAI** | Generates embeddings for semantic search |
-| **Merkle Tree** | Tracks file changes for incremental indexing |
+Claude Code reads a codebase with grep and file reads, which costs many round trips on an unfamiliar tree.
+This was my try-out of code retrieval for it.
+It started as an ambitious design with Qdrant, a Merkle tree for change detection and BM25 with rank fusion.
+That was over-engineering for a tool used by one person, and too much to finish properly as a side project.
+I cut it down to libSQL, vector search and a keyword fallback, and stopped there, because better implementations now exist (see the top of this page).
 
-### Data Flow
+## Quickstart
 
-1. **Indexing**: File -> Tree-sitter AST -> Semantic chunks -> OpenAI embeddings -> Qdrant
-2. **Search**: Query -> OpenAI embedding -> Qdrant hybrid search -> Results
-
-## Requirements
-
-- **Qdrant** running at localhost:6333
-- **OpenAI API key** for embeddings
-
-## Installation
+Requires [uv](https://docs.astral.sh/uv/) and Python 3.12. The repo pins 3.12 in `.python-version`, because the libSQL binding crashes on 3.14.
 
 ```bash
-pip install git+https://github.com/Questi0nM4rk/codebase-mcp.git
+git clone https://github.com/Questi0nM4rk/codebase-mcp.git && cd codebase-mcp && uv sync --all-extras
 ```
 
-## Usage with Claude Code
+Run it. This sends an MCP handshake and lists the tools. No API key is needed.
 
 ```bash
-claude mcp add codebase -- python -m codebase_rag.server
+printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"t","version":"0"}}}' '{"jsonrpc":"2.0","method":"notifications/initialized"}' '{"jsonrpc":"2.0","id":2,"method":"tools/list"}' | uv run codebase-rag | grep -o '"name":"[a-z_]*"'
 ```
 
-## Environment Variables
+```text
+"name":"codebase-rag"
+"name":"search"
+"name":"index_file"
+"name":"delete_file"
+"name":"clear_project"
+"name":"status"
+```
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `QDRANT_HOST` | `localhost` | Qdrant server host |
-| `QDRANT_PORT` | `6333` | Qdrant server port |
-| `OPENAI_API_KEY` | - | Required for embeddings |
-
-## Starting Qdrant
+Test:
 
 ```bash
-docker run -d --name qdrant \
-  -p 6333:6333 -p 6334:6334 \
-  -v ~/.qdrant/storage:/qdrant/storage \
-  qdrant/qdrant
+uv run pytest tests/ -v
 ```
 
-## Search Example
+To use it in Claude Code: `claude mcp add codebase -- uv run --directory "$PWD" codebase-rag`.
+Set `OPENAI_API_KEY` to get vector search. Without it, search is keyword only.
+The index is `~/.codeagent/codeagent.db`. Tools, search modes and settings are in [docs/reference.md](docs/reference.md).
 
-```python
-# Search for authentication code
-search(query="user authentication login", k=10, language="python")
+## How it works
 
-# Filter by chunk type
-search(query="repository pattern", type="class", language="csharp")
+```mermaid
+flowchart LR
+    F[source file] --> T[Tree-sitter parse]
+    T --> C[chunks: functions, classes]
+    C --> E{OPENAI_API_KEY set?}
+    E -- yes --> V[OpenAI embedding]
+    E -- no --> N[no embedding]
+    V --> D[(libSQL)]
+    N --> D
+    Q[search query] --> D
 ```
 
-## Troubleshooting
+Parsing, chunking, hashing and storage are deterministic and run locally.
+The only call to a model is the OpenAI embeddings request, and only when a key is set.
+Each chunk stores a sha256 of its file. `index_file` does not compare it: it deletes the file's chunks and rebuilds them on every call.
+Search is cosine distance over embeddings, or a `LIKE` keyword match without them. There is no BM25 and no rank fusion.
 
-### Qdrant Connection Failed
+## Numbers
 
-```
-Qdrant connection failed: Connection refused
-```
+Measured 2026-10-12, Arch Linux, Python 3.12, uv 0.13.0.
 
-**Solution**: Ensure Qdrant is running:
-```bash
-docker ps | grep qdrant
-# If not running:
-docker start qdrant
-# Or start fresh:
-docker run -d --name qdrant -p 6333:6333 -p 6334:6334 qdrant/qdrant
-```
+| What | Value | How measured |
+| --- | --- | --- |
+| Tests | 12 passed in about 2 s | `uv run pytest tests/ -v` |
+| Tests on Python 3.14 | 8 passed, 4 skipped; the 4 skipped cover the index and search path | `uv run --python 3.14 pytest tests/ -v` |
+| Code size | 771 lines of Python code (src and tests) | `scc src tests` |
+| Index one file, keyless | 24 chunks from `server.py` in 15 ms | `index_file` through `CodebaseRAG`, no key, fresh database |
+| Search quality | Not measured | No benchmark exists |
 
-### OpenAI API Key Missing
+Commits include agent-authored work under my identity; design, orchestration and review are mine.
 
-```
-get_embed returns zero vectors
-```
+## Status
 
-**Solution**: Set the environment variable:
-```bash
-export OPENAI_API_KEY="your-api-key"
-```
-
-### Tree-sitter Parser Not Loading
-
-```
-Failed to load parser for python: ...
-```
-
-**Solution**: Reinstall with all dependencies:
-```bash
-pip install --force-reinstall git+https://github.com/Questi0nM4rk/codebase-mcp.git
-```
-
-### Index Not Finding Files
-
-```
-search returns empty results
-```
-
-**Solution**: Check index status and re-index:
-```python
-# Check status
-status()
-
-# Re-index specific file
-index_file(path="/path/to/file.py", project="myproject")
-```
-
-### Memory Issues with Large Files
-
-Files over 2000 characters are truncated in chunks. For very large files:
-- Ensure Tree-sitter is available for proper semantic chunking
-- Consider splitting large files into smaller modules
-
-## Development
-
-```bash
-# Install dev dependencies
-pip install -e ".[dev]"
-
-# Run tests
-pytest tests/ -v
-
-# Lint
-ruff check src/
-
-# Type check
-mypy src/ --ignore-missing-imports --check-untyped-defs
-```
+- **Works:** the stdio MCP server, Tree-sitter chunking for nine languages, indexing one file at a time, keyword search without a key, ruff and pyright clean.
+- **Experimental:** vector search through OpenAI embeddings. It is covered by no test and I did not measure its quality.
+- **Tried and dropped:** Qdrant, a Merkle tree and BM25 with rank fusion. The first commit had them. Commit `bdd1fad` migrated to libSQL, and this README had not been updated until now.
+- **Known gaps:**
+  - Keyword search ranks nothing: any matching word gives score 0.5.
+  - The TypeScript grammar does not load, so `.ts` and `.tsx` files become raw 2000 character chunks.
+  - The stored file hash is never used to skip unchanged files, so every `index_file` call re-parses and re-embeds.
+  - `index_file` takes one file. There is no directory walk and no file watcher.
+  - Embeddings are not added to chunks indexed before a key was set.
+  - The database is shared with the sibling `codeagent` project at a fixed path.
 
 ## License
 

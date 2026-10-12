@@ -1,6 +1,6 @@
 # codebase-mcp
 
-MCP server for codebase indexing with Tree-sitter parsing and libSQL hybrid search.
+MCP server for codebase indexing with Tree-sitter parsing and libSQL vector and keyword search.
 
 ## Structure
 
@@ -33,7 +33,7 @@ uv sync --all-extras
 
 ## Tools Provided
 
-- `search` - Hybrid keyword + vector search over indexed code
+- `search` - Vector search over indexed code, keyword search when no embeddings are available
 - `index_file` - Index or re-index a single file
 - `delete_file` - Remove a file from the index
 - `clear_project` - Remove all indexed chunks for a project
