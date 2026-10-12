@@ -13,7 +13,7 @@ Not maintained. For real use, try [semble](https://github.com/MinishLab/semble),
 
 ```text
 index_file(path="src/codebase_rag/server.py", project="demo")
-  -> {"chunks_created": 24, ...}
+  -> {"chunks_created": 25, ...}
 search(query="compute file hash", k=3, project="demo")
   -> [{"_search_mode": "keyword_only (embeddings unavailable)"}, {"name": "Chunk", "score": 0.5, ...}, ...]
 ```
@@ -37,7 +37,11 @@ git clone https://github.com/Questi0nM4rk/codebase-mcp.git && cd codebase-mcp &&
 Run it. This sends an MCP handshake and lists the tools. No API key is needed.
 
 ```bash
-printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"t","version":"0"}}}' '{"jsonrpc":"2.0","method":"notifications/initialized"}' '{"jsonrpc":"2.0","id":2,"method":"tools/list"}' | uv run codebase-rag | grep -o '"name":"[a-z_]*"'
+printf '%s\n' \
+  '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"t","version":"0"}}}' \
+  '{"jsonrpc":"2.0","method":"notifications/initialized"}' \
+  '{"jsonrpc":"2.0","id":2,"method":"tools/list"}' \
+  | uv run codebase-rag | grep -o '"name":"[a-z_]*"'
 ```
 
 ```text
@@ -84,9 +88,9 @@ Measured 2026-10-12, Arch Linux, Python 3.12, uv 0.13.0.
 | What | Value | How measured |
 | --- | --- | --- |
 | Tests | 12 passed in about 2 s | `uv run pytest tests/ -v` |
-| Tests on Python 3.14 | 8 passed, 4 skipped; the 4 skipped cover the index and search path | `uv run --python 3.14 pytest tests/ -v` |
-| Code size | 771 lines of Python code (src and tests) | `scc src tests` |
-| Index one file, keyless | 24 chunks from `server.py` in 15 ms | `index_file` through `CodebaseRAG`, no key, fresh database |
+| Tests on Python 3.14 | 8 passed, 4 skipped; the 4 skipped cover the index and search path | `uv run --python 3.14 --extra dev pytest tests/ -v` |
+| Code size | 776 lines of Python code (src and tests) | `scc src tests` |
+| Index one file, keyless | 25 chunks from `server.py` in 15 ms | `index_file` through `CodebaseRAG`, no key, fresh database |
 | Search quality | Not measured | No benchmark exists |
 
 Commits include agent-authored work under my identity; design, orchestration and review are mine.
