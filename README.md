@@ -5,7 +5,7 @@
 **An MCP server that indexes source files into libSQL and searches them, written for one person's Claude Code setup.**
 
 [![CI](https://github.com/Questi0nM4rk/codebase-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/Questi0nM4rk/codebase-mcp/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![license](https://img.shields.io/github/license/Questi0nM4rk/codebase-mcp?color=blue)](./LICENSE)
 
 </div>
 
@@ -99,7 +99,7 @@ Commits include agent-authored work under my identity; design, orchestration and
 
 - **Works:** the stdio MCP server, Tree-sitter chunking for nine languages, indexing one file at a time, keyword search without a key, ruff and pyright clean.
 - **Experimental:** vector search through OpenAI embeddings. It is covered by no test and I did not measure its quality.
-- **Tried and dropped:** Qdrant, a Merkle tree and BM25 with rank fusion. The first commit had them. Commit `bdd1fad` migrated to libSQL, and this README had not been updated until now.
+- **Tried and dropped:** Qdrant, a Merkle tree and BM25 with rank fusion. The first commit had them. Commit `bdd1fad` migrated to libSQL.
 - **Known gaps:**
   - Keyword search ranks nothing: any matching word gives score 0.5.
   - The TypeScript grammar does not load, so `.ts` and `.tsx` files become raw 2000 character chunks.
