@@ -13,7 +13,7 @@ Not maintained. For real use, try [semble](https://github.com/MinishLab/semble),
 
 ```text
 index_file(path="src/codebase_rag/server.py", project="demo")
-  -> {"chunks_created": 25, ...}
+  -> {"chunks_created": <n>, ...}
 search(query="compute file hash", k=3, project="demo")
   -> [{"_search_mode": "keyword_only (embeddings unavailable)"}, {"name": "Chunk", "score": 0.5, ...}, ...]
 ```
@@ -83,21 +83,19 @@ Search is cosine distance over embeddings, or a `LIKE` keyword match without the
 
 ## Numbers
 
-Measured 2026-10-12, Arch Linux, Python 3.12, uv 0.13.0.
-
-| What | Value | How measured |
-| --- | --- | --- |
-| Tests | 12 passed in about 2 s | `uv run pytest tests/ -v` |
-| Tests on Python 3.14 | 8 passed, 4 skipped; the 4 skipped cover the index and search path | `uv run --python 3.14 --extra dev pytest tests/ -v` |
-| Code size | 776 lines of Python code (src and tests) | `scc src tests` |
-| Index one file, keyless | 25 chunks from `server.py` in 15 ms | `index_file` through `CodebaseRAG`, no key, fresh database |
-| Search quality | Not measured | No benchmark exists |
+| What | How to measure |
+| --- | --- |
+| Tests | `uv run pytest tests/ -v` |
+| Tests on Python 3.14 | `uv run --python 3.14 --extra dev pytest tests/ -v` |
+| Code size | `scc src tests` |
+| Index one file, keyless | `index_file` through `CodebaseRAG`, no key, fresh database |
+| Search quality | Not measured: no benchmark exists |
 
 Commits include agent-authored work under my identity; design, orchestration and review are mine.
 
 ## Status
 
-- **Works:** the stdio MCP server, Tree-sitter chunking for nine languages, indexing one file at a time, keyword search without a key, ruff and pyright clean.
+- **Works:** the stdio MCP server, Tree-sitter chunking for the supported languages, indexing one file at a time, keyword search without a key, ruff and pyright clean.
 - **Experimental:** vector search through OpenAI embeddings. It is covered by no test and I did not measure its quality.
 - **Tried and dropped:** Qdrant, a Merkle tree and BM25 with rank fusion. The first commit had them. Commit `bdd1fad` migrated to libSQL.
 - **Known gaps:**
