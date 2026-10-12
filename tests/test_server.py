@@ -6,9 +6,9 @@ from pathlib import Path
 import pytest
 
 from codebase_rag.server import (
+    LIBSQL_AVAILABLE,
     Chunk,
     CodebaseRAG,
-    LIBSQL_AVAILABLE,
     _compute_file_hash,
 )
 

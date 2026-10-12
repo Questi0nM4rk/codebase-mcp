@@ -8,8 +8,8 @@ Provides tools for:
 
 from __future__ import annotations
 
-import atexit
 import asyncio
+import atexit
 import hashlib
 import json
 import logging
@@ -278,7 +278,7 @@ class CodebaseRAG:
 
         # Initialize Tree-sitter parsers
         if TREE_SITTER_AVAILABLE and Parser is not None and Language is not None:
-            for _, (lang_name, grammar_module) in LANGUAGE_MAP.items():
+            for lang_name, grammar_module in LANGUAGE_MAP.values():
                 if grammar_module and lang_name not in self.parsers:
                     try:
                         parser = Parser()
@@ -739,7 +739,7 @@ async def list_tools() -> list[Tool]:
     return [
         Tool(
             name="search",
-            description="Search indexed codebase using hybrid keyword + vector search",
+            description="Search indexed code by vector similarity, or by keyword when no embeddings exist",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -859,9 +859,17 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
     return [TextContent(type="text", text=f"Unknown tool: {name}")]
 
 
+async def _serve() -> None:
+    """Serve MCP over stdio until the client disconnects."""
+    async with stdio_server() as (read_stream, write_stream):
+        await server.run(
+            read_stream, write_stream, server.create_initialization_options()
+        )
+
+
 def main() -> None:
     """Run the MCP server."""
-    asyncio.run(stdio_server(server))  # type: ignore[arg-type]
+    asyncio.run(_serve())
 
 
 if __name__ == "__main__":
