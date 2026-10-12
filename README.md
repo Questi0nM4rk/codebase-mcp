@@ -41,7 +41,6 @@ printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocol
 ```
 
 ```text
-"name":"codebase-rag"
 "name":"search"
 "name":"index_file"
 "name":"delete_file"
